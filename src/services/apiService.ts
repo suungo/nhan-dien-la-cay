@@ -1,5 +1,5 @@
 // API service để giao tiếp với Flask server
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'https://web-production-15417.up.railway.app';
 
 export interface PredictionResult {
   status: 'healthy' | 'unhealthy' | 'unreliable';
