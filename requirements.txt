@@ -1,0 +1,13 @@
+Flask==2.3.3
+Flask-CORS==4.0.0
+# TensorFlow 2.16+ hỗ trợ Keras 3
+tensorflow==2.17.0
+h5py==3.11.0
+# Keras 3 standalone (tương thích với model mới)
+keras==3.3.3
+Pillow==10.0.1
+numpy==1.26.4
+Werkzeug==2.3.7
+opencv-python-headless==4.8.1.78
+requests==2.31.0
+gunicorn==21.2.0
