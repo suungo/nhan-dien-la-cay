@@ -1,10 +1,11 @@
-import { Button, Form, Image, message, Modal, Spin, Tag } from "antd";
+import { Button, Form, Image, message, Modal, Select, Spin, Tag } from "antd";
 import {
   Camera,
   Download,
   Images,
   RefreshCw,
   Server,
+  Settings,
   Video,
 } from "lucide-react";
 import React, {
@@ -14,6 +15,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import type { AvailableModel } from "./services/apiService";
 import { apiService } from "./services/apiService";
 
 // Define InferenceResult type locally (compatible with server response)
@@ -79,9 +81,40 @@ function App() {
   const [isVideoReady, setIsVideoReady] = useState(false); // Trạng thái video sẵn sàng
   const [serverConnected, setServerConnected] = useState(false); // Trạng thái kết nối server
   const [serverStatus, setServerStatus] = useState<string>(""); // Thông tin server
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]); // Danh sách model có sẵn
+  const [currentModel, setCurrentModel] = useState<string>("resnet50"); // Model hiện tại
+  const [isSwitchingModel, setIsSwitchingModel] = useState(false); // Trạng thái đang chuyển model
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Load danh sách model có sẵn
+  const loadAvailableModels = useCallback(async () => {
+    try {
+      console.log("📋 Loading available models...");
+      const modelsData = await apiService.getAvailableModels();
+      setAvailableModels(modelsData.available_models);
+      setCurrentModel(modelsData.current_model);
+      console.log("✅ Available models loaded:", modelsData);
+    } catch (error) {
+      console.error("❌ Failed to load available models:", error);
+      // Fallback to default models
+      setAvailableModels([
+        {
+          id: "resnet50",
+          name: "ResNet50",
+          filename: "best_resnet50_finetune.h5",
+          is_current: true,
+        },
+        {
+          id: "mobilenetv2",
+          name: "MobileNetV2",
+          filename: "best_mobilenetv2_finetune.h5",
+          is_current: false,
+        },
+      ]);
+    }
+  }, []);
 
   // Kiểm tra kết nối server khi component mount
   const checkServerConnection = useCallback(async () => {
@@ -102,10 +135,11 @@ function App() {
     }
   }, []);
 
-  // Effect để kiểm tra kết nối server khi component mount
+  // Effect để kiểm tra kết nối server và load models khi component mount
   useEffect(() => {
     checkServerConnection();
-  }, [checkServerConnection]);
+    loadAvailableModels();
+  }, [checkServerConnection, loadAvailableModels]);
 
   // Xử lý sự kiện kéo thả file vào vùng drop
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -252,6 +286,42 @@ function App() {
     setLogoPreview(null);
     setResult(null); // Xóa luôn kết quả dự đoán
     message.info("Đã xoá ảnh và kết quả");
+  };
+
+  // Xử lý chuyển đổi model
+  const handleModelChange = async (modelType: string) => {
+    if (modelType === currentModel) {
+      message.info(
+        `${availableModels.find((m) => m.id === modelType)?.name} đã được chọn`
+      );
+      return;
+    }
+
+    setIsSwitchingModel(true);
+    try {
+      console.log(`🔄 Switching to ${modelType} model...`);
+      const result = await apiService.switchModel(modelType);
+
+      if (result.success) {
+        setCurrentModel(modelType);
+        // Update available models to reflect current model
+        setAvailableModels((prev) =>
+          prev.map((model) => ({
+            ...model,
+            is_current: model.id === modelType,
+          }))
+        );
+        message.success(result.message);
+        console.log(`✅ Successfully switched to ${modelType}`);
+      } else {
+        message.error(result.message);
+      }
+    } catch (error) {
+      console.error("❌ Failed to switch model:", error);
+      message.error(`Lỗi khi chuyển đổi model: ${error}`);
+    } finally {
+      setIsSwitchingModel(false);
+    }
   };
 
   // Hàm mở webcam
@@ -491,7 +561,7 @@ function App() {
                     Kiểm tra lại
                   </Button>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-3">
                   <Server
                     size={16}
                     className={
@@ -506,6 +576,43 @@ function App() {
                     {serverStatus}
                   </span>
                 </div>
+
+                {/* Model Selection */}
+                {serverConnected && availableModels.length > 0 && (
+                  <div className="mt-3 p-3 bg-white rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Settings size={16} className="text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">
+                        Chọn Model AI
+                      </span>
+                    </div>
+                    <Select
+                      value={currentModel}
+                      onChange={handleModelChange}
+                      loading={isSwitchingModel}
+                      disabled={isSwitchingModel}
+                      className="w-full"
+                      size="small"
+                      options={availableModels.map((model) => ({
+                        value: model.id,
+                        label: (
+                          <div className="flex items-center justify-between">
+                            <span>{model.name}</span>
+                            {model.is_current && (
+                              <span className="text-xs text-green-600 font-medium">
+                                ✓ Đang dùng
+                              </span>
+                            )}
+                          </div>
+                        ),
+                      }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Chọn model để thay đổi thuật toán nhận diện
+                    </p>
+                  </div>
+                )}
+
                 {!serverConnected && (
                   <p className="text-xs text-red-600 mt-2">
                     ⚠️ Vui lòng khởi động Flask server trước khi sử dụng
@@ -526,13 +633,17 @@ function App() {
                         Flask Server + TensorFlow
                       </h5>
                       <p className="text-sm text-blue-600">
-                        Model .h5 được xử lý trên server để tăng hiệu suất
+                        Model{" "}
+                        {availableModels.find((m) => m.id === currentModel)
+                          ?.name || "AI"}{" "}
+                        được xử lý trên server để tăng hiệu suất
                       </p>
                     </div>
                   </div>
                 </div>
                 <p className="text-sm text-blue-600 mt-2">
                   Ảnh sẽ được gửi lên server để AI phân tích và trả về kết quả
+                  với GradCAM visualization
                 </p>
               </div>
 
@@ -775,7 +886,7 @@ function App() {
                         </div>
                       )}
 
-                    {/* GradCAM + Contour Visualization */}
+                    {/* GradCAM + Contour Visualization - chỉ hiển thị khi cây không khỏe mạnh */}
                     {(() => {
                       console.log(
                         "🎨 Rendering image section, result:",
@@ -785,116 +896,122 @@ function App() {
                       console.log("🎨 Has Contour:", !!result?.contour_image);
                       return null;
                     })()}
-                    {(result?.gradcam_image || result?.contour_image) && (
-                      <div className="mt-4 w-full max-w-4xl mx-auto px-2">
-                        <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
-                          <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
-                            🔍 Phân tích AI chi tiết
-                          </h4>
+                    {result.status !== "healthy" &&
+                      (result?.gradcam_image || result?.contour_image) &&
+                      result.healthy_probability !== undefined && (
+                        <div className="mt-4 w-full max-w-4xl mx-auto px-2">
+                          <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
+                            <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                              🔍 Phân tích AI chi tiết
+                            </h4>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {/* Original Image */}
-                            {logoPreview && (
-                              <div>
-                                <p className="text-xs text-gray-600 mb-2 font-medium text-center">
-                                  Ảnh gốc
-                                </p>
-                                <div className="relative rounded-lg overflow-hidden border-2 border-gray-300 shadow-md">
-                                  <Image
-                                    src={logoPreview}
-                                    alt="Ảnh gốc"
-                                    preview={true}
-                                    className="w-full h-auto"
-                                    style={{
-                                      width: "100%",
-                                      height: "auto",
-                                      maxHeight: "250px",
-                                      objectFit: "contain",
-                                    }}
-                                  />
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {/* Original Image */}
+                              {logoPreview && (
+                                <div>
+                                  <p className="text-xs text-gray-600 mb-2 font-medium text-center">
+                                    Ảnh gốc
+                                  </p>
+                                  <div className="relative rounded-lg overflow-hidden border-2 border-gray-300 shadow-md">
+                                    <Image
+                                      src={logoPreview}
+                                      alt="Ảnh gốc"
+                                      preview={true}
+                                      className="w-full h-auto"
+                                      style={{
+                                        width: "100%",
+                                        height: "auto",
+                                        maxHeight: "250px",
+                                        objectFit: "contain",
+                                      }}
+                                    />
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {/* GradCAM Heatmap */}
-                            {result?.gradcam_image && (
-                              <div>
-                                <p className="text-xs text-red-600 mb-2 font-medium text-center">
-                                  Bản đồ vùng bệnh (GradCAM)
-                                </p>
-                                <div className="relative rounded-lg overflow-hidden border-2 border-red-300 shadow-md">
-                                  <img
-                                    src={result.gradcam_image}
-                                    alt="GradCAM Heatmap"
-                                    className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
-                                    style={{
-                                      width: "100%",
-                                      height: "auto",
-                                      maxHeight: "250px",
-                                      objectFit: "contain",
-                                    }}
-                                    onClick={() =>
-                                      window.open(
-                                        result.gradcam_image,
-                                        "_blank"
-                                      )
-                                    }
-                                  />
+                              {/* GradCAM Heatmap */}
+                              {result?.gradcam_image && (
+                                <div>
+                                  <p className="text-xs text-red-600 mb-2 font-medium text-center">
+                                    Bản đồ vùng bệnh (GradCAM)
+                                  </p>
+                                  <div className="relative rounded-lg overflow-hidden border-2 border-red-300 shadow-md">
+                                    <img
+                                      src={result.gradcam_image}
+                                      alt="GradCAM Heatmap"
+                                      className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                      style={{
+                                        width: "100%",
+                                        height: "auto",
+                                        maxHeight: "250px",
+                                        objectFit: "contain",
+                                      }}
+                                      onClick={() =>
+                                        window.open(
+                                          result.gradcam_image,
+                                          "_blank"
+                                        )
+                                      }
+                                    />
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {/* Contour Image */}
-                            {result?.contour_image && (
-                              <div>
-                                <p className="text-xs text-orange-600 mb-2 font-medium text-center">
-                                  Khoanh vùng bệnh (Contour)
-                                </p>
-                                <div className="relative rounded-lg overflow-hidden border-2 border-orange-300 shadow-md">
-                                  <img
-                                    src={result.contour_image}
-                                    alt="Contour Detection"
-                                    className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
-                                    style={{
-                                      width: "100%",
-                                      height: "auto",
-                                      maxHeight: "250px",
-                                      objectFit: "contain",
-                                    }}
-                                    onClick={() =>
-                                      window.open(
-                                        result.contour_image,
-                                        "_blank"
-                                      )
-                                    }
-                                  />
+                              {/* Contour Image */}
+                              {result?.contour_image && (
+                                <div>
+                                  <p className="text-xs text-orange-600 mb-2 font-medium text-center">
+                                    Khoanh vùng bệnh (Contour)
+                                  </p>
+                                  <div className="relative rounded-lg overflow-hidden border-2 border-orange-300 shadow-md">
+                                    <img
+                                      src={result.contour_image}
+                                      alt="Contour Detection"
+                                      className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                      style={{
+                                        width: "100%",
+                                        height: "auto",
+                                        maxHeight: "250px",
+                                        objectFit: "contain",
+                                      }}
+                                      onClick={() =>
+                                        window.open(
+                                          result.contour_image,
+                                          "_blank"
+                                        )
+                                      }
+                                    />
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
+                              )}
+                            </div>
 
-                          {/* Legend */}
-                          <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-xs">
-                            <div className="flex items-center gap-1">
-                              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                              <span className="text-blue-700">Khỏe mạnh</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-3 h-3 bg-green-400 rounded"></div>
-                              <span className="text-green-700">Trung bình</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-3 h-3 bg-yellow-400 rounded"></div>
-                              <span className="text-yellow-700">Cảnh báo</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-3 h-3 bg-red-500 rounded"></div>
-                              <span className="text-red-700">Bệnh nặng</span>
+                            {/* Legend */}
+                            <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-xs">
+                              <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                                <span className="text-blue-700">Khỏe mạnh</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-green-400 rounded"></div>
+                                <span className="text-green-700">
+                                  Trung bình
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-yellow-400 rounded"></div>
+                                <span className="text-yellow-700">
+                                  Cảnh báo
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 bg-red-500 rounded"></div>
+                                <span className="text-red-700">Bệnh nặng</span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Thông báo model không tin cậy */}
                     {result.status === "unreliable" && (

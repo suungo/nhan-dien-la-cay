@@ -1,5 +1,5 @@
 // API service để giao tiếp với Flask server
-const API_BASE_URL = 'https://web-production-15417.up.railway.app';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export interface PredictionResult {
   status: 'healthy' | 'unhealthy' | 'unreliable';
@@ -16,6 +16,29 @@ export interface ApiResponse {
   result?: PredictionResult;
   error?: string;
   message?: string;
+}
+
+export interface ModelInfo {
+  current_model: string;
+  current_model_name: string;
+  model_path: string;
+  model_loaded: boolean;
+  input_shape: string;
+  output_shape: string;
+  classes: string[];
+  img_size: number;
+}
+
+export interface AvailableModel {
+  id: string;
+  name: string;
+  filename: string;
+  is_current: boolean;
+}
+
+export interface ModelsListResponse {
+  available_models: AvailableModel[];
+  current_model: string;
 }
 
 class ApiService {
@@ -87,7 +110,7 @@ class ApiService {
   }
 
   // Lấy thông tin model
-  async getModelInfo(): Promise<{ input_shape: number[]; output_shape: number[]; model_loaded: boolean }> {
+  async getModelInfo(): Promise<ModelInfo> {
     try {
       const response = await fetch(`${this.baseUrl}/model/info`);
       
@@ -100,6 +123,46 @@ class ApiService {
     } catch (error) {
       console.error('Get model info failed:', error);
       throw new Error(`Không thể lấy thông tin model: ${error}`);
+    }
+  }
+
+  // Lấy danh sách model có sẵn
+  async getAvailableModels(): Promise<ModelsListResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/models/list`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Get available models failed:', error);
+      throw new Error(`Không thể lấy danh sách model: ${error}`);
+    }
+  }
+
+  // Chuyển đổi model
+  async switchModel(modelType: string): Promise<{ success: boolean; message: string; current_model?: string; model_name?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/model/switch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model_type: modelType }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Switch model failed:', error);
+      throw new Error(`Không thể chuyển đổi model: ${error}`);
     }
   }
 
@@ -139,3 +202,7 @@ export const apiService = new ApiService();
 
 // Export class để có thể tạo instance mới nếu cần
 export default ApiService;
+
+// Re-export interfaces for convenience
+// export type { ApiResponse, AvailableModel, ModelInfo, ModelsListResponse, PredictionResult };
+
